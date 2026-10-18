@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 42" role="img" aria-label="Bandeira do Reino Unido">
+  <defs>
+    <clipPath id="gbFrame"><rect width="60" height="42"/></clipPath>
+  </defs>
+  <g clip-path="url(#gbFrame)">
+    <rect width="60" height="42" fill="#012169"/>
+    <path d="M0 0 60 42M60 0 0 42" stroke="#ffffff" stroke-width="8.4"/>
+    <path d="M0 0 60 42M60 0 0 42" stroke="#c8102e" stroke-width="2.8"/>
+    <path d="M30 0V42M0 21H60" stroke="#ffffff" stroke-width="14"/>
+    <path d="M30 0V42M0 21H60" stroke="#c8102e" stroke-width="8.4"/>
+  </g>
+</svg>

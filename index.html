@@ -1,59 +1,355 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
-
+<html lang="pt-BR" data-theme="dark">
 <head>
-    <meta charset="UTF-8">
-    <title>DevClub - Convert Money</title>
-    <link rel="stylesheet" href="style.css">
-    <script src="scripts.js" defer></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+
+  <title>Convert Money · Conversor de Moedas em Tempo Real | DevClub</title>
+  <meta name="description" content="Converta Real, Dólar, Euro, Libra e Bitcoin com cotações atualizadas, variação dos últimos 30 dias, histórico de conversões, atalhos de teclado e tema claro/escuro. Projeto DevClub.">
+  <meta name="author" content="DevClub">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#0a0a14" id="metaThemeColor">
+
+  <!-- Compartilhamento social -->
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="pt_BR">
+  <meta property="og:title" content="Convert Money · Conversor de Moedas em Tempo Real">
+  <meta property="og:description" content="Cotações em tempo real, variação de 30 dias, histórico e atalhos de teclado. Converta Real, Dólar, Euro, Libra e Bitcoin.">
+  <meta property="og:image" content="conversor-moedas-linkedin.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Convert Money · Conversor de Moedas em Tempo Real">
+  <meta name="twitter:description" content="Cotações em tempo real, variação de 30 dias e histórico de conversões.">
+  <meta name="twitter:image" content="conversor-moedas-linkedin.png">
+
+  <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
+  <link rel="apple-touch-icon" href="logo%201.png">
+  <link rel="manifest" href="manifest.webmanifest">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap">
+
+  <link rel="stylesheet" href="style.css">
+
+  <script>
+    /* Define o tema antes da primeira pintura para evitar "flash" de tema errado. */
+    (function () {
+      try {
+        var saved = localStorage.getItem('devclub:cm:theme');
+        var prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+        var theme = saved === 'light' || saved === 'dark' ? saved : (prefersLight ? 'light' : 'dark');
+        document.documentElement.dataset.theme = theme;
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    })();
+  </script>
 </head>
 
 <body>
-    <div>
-        <img src="./logo 1.png" alt="Logo DevClub" class="logo">
-    </div>
-    <main class="container">
-        <label>
-            converter <b>de</b>
-            <select>
-                <option> R$ real brasileiro</option>
-            </select>
-        </label>
+  <a class="skip-link" href="#conversor">Ir direto para o conversor</a>
 
-        <label>
-            converter <b>para</b>
-            <select>
-                <option>US$ Dólar americano</option>
-                <option>€ Euro</option>
-                <option>₿ Bitcoin</option>
-                <option>£ Libra esterlina</option>
-            </select>
-        </label>
+  <div class="bg" aria-hidden="true">
+    <span class="bg__glow bg__glow--a"></span>
+    <span class="bg__glow bg__glow--b"></span>
+    <span class="bg__glow bg__glow--c"></span>
+    <span class="bg__grid"></span>
+    <span class="bg__noise"></span>
+  </div>
 
-        <label>
-            valor
-            <input placeholder="Digite o valor">
-        </label>
+  <div class="app">
+    <!-- ============================ TOPO ============================ -->
+    <header class="topbar">
+      <a class="brand" href="#conversor">
+        <img class="brand__mark" src="assets/logo-mark.svg" alt="" width="42" height="42">
+        <span class="brand__text">
+          <strong class="brand__name">Convert Money</strong>
+          <span class="brand__tag">DevClub · conversor de moedas</span>
+        </span>
+      </a>
 
-        <button class="convert-button">Converter</button>
+      <div class="topbar__actions">
+        <p class="net-pill" id="netPill" data-state="online" role="status">
+          <span class="net-pill__dot" aria-hidden="true"></span>
+          <span class="net-pill__text" id="netPillText">Online</span>
+        </p>
 
-        <section>
-            <div class="moeda">
-                <img src="./brasil 2.png" alt="moeda a converter">
-                <p class="moeda-nome">Real</p>
-                <p class="moeda-valor">R$ 0,00</p>
+        <button type="button" class="icon-btn" id="themeToggle" aria-pressed="false" title="Alternar tema (T)">
+          <svg class="icon icon--sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4 17 7M7 17l-1.6 1.6"/></svg>
+          <svg class="icon icon--moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.2A8.4 8.4 0 0 1 9.8 4a8.6 8.6 0 1 0 10.2 10.2Z"/></svg>
+          <span class="sr-only" id="themeToggleLabel">Tema escuro</span>
+        </button>
+
+        <button type="button" class="icon-btn" id="shareBtn" title="Compartilhar conversão">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.4V3.8m0 0L8.2 7.6M12 3.8l3.8 3.8"/><path d="M5 14.2v4.2a1.6 1.6 0 0 0 1.6 1.6h10.8a1.6 1.6 0 0 0 1.6-1.6v-4.2"/></svg>
+          <span class="sr-only">Compartilhar conversão</span>
+        </button>
+
+        <button type="button" class="icon-btn" id="shortcutsBtn" title="Atalhos de teclado (?)">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.6" y="5.4" width="18.8" height="13.2" rx="3.2"/><path d="M7 10h.01M10.6 10h.01M14.2 10h.01M7.6 14h8.8"/></svg>
+          <span class="sr-only">Atalhos de teclado</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- ============================ CONTEÚDO ============================ -->
+    <main class="layout">
+      <!-- ---------------------------- CONVERSOR ---------------------------- -->
+      <section class="card card--fx" id="conversor" aria-labelledby="fxTitle" aria-busy="false">
+        <header class="card__head">
+          <div class="card__heading">
+            <h1 class="card__title" id="fxTitle">Conversor de moedas</h1>
+            <p class="card__sub" id="fxSub">Cotações em tempo real entre cinco moedas.</p>
+          </div>
+          <p class="pill" id="sourcePill" data-state="loading" title="Fonte das cotações">
+            <span class="pill__dot" aria-hidden="true"></span>
+            <span id="sourcePillText">Carregando…</span>
+          </p>
+        </header>
+
+        <form class="fx" id="fxForm" novalidate autocomplete="off">
+          <!-- ------------------- MOEDA DE ORIGEM ------------------- -->
+          <div class="fx-field">
+            <div class="fx-field__top">
+              <label class="label" for="amountInput">Você envia</label>
+              <span class="hint" id="amountHint">Aceita vírgula ou ponto</span>
             </div>
 
-            <img class="arrow" src="./Vector.png" alt="seta">
+            <div class="fx-field__body">
+              <div class="amount" id="amountShell" data-invalid="false">
+                <span class="amount__symbol" id="fromSymbol" aria-hidden="true">R$</span>
+                <input
+                  class="amount__input"
+                  id="amountInput"
+                  type="text"
+                  inputmode="decimal"
+                  enterkeyhint="done"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="0,00"
+                  aria-describedby="amountHint"
+                  aria-label="Valor que você envia">
+                <button type="button" class="amount__clear" id="clearAmount" aria-label="Limpar valor" hidden>
+                  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
+                </button>
+              </div>
 
-            <div class="moeda">
-                <img src="./estados-unidos (1) 1.png" alt="moeda convertida">
-                <p class="moeda-nome"> Dólar americano</p>
-                <p class="moeda-valor">US$ 0,00</p>
+              <div class="picker" id="pickerFrom" data-open="false">
+                <label class="sr-only" for="fromSearch">Moeda de origem</label>
+                <div class="picker__control">
+                  <img class="picker__flag" id="fromFlag" src="assets/flags/br.svg" alt="" width="30" height="21">
+                  <input
+                    class="picker__input"
+                    id="fromSearch"
+                    type="text"
+                    role="combobox"
+                    aria-expanded="false"
+                    aria-controls="fromList"
+                    aria-autocomplete="list"
+                    aria-haspopup="listbox"
+                    aria-label="Moeda de origem"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="Buscar moeda">
+                  <svg class="picker__chevron icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.8 9.6 12 14.8l5.2-5.2"/></svg>
+                </div>
+                <ul class="picker__list" id="fromList" role="listbox" aria-label="Moedas de origem" tabindex="-1" hidden></ul>
+              </div>
             </div>
 
+            <p class="error" id="amountError" role="alert" hidden>
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.4v4.8M12 16.6h.01"/><path d="M10.3 3.9 2.6 17.4A1.7 1.7 0 0 0 4 20h16a1.7 1.7 0 0 0 1.5-2.6L13.7 3.9a1.7 1.7 0 0 0-3 0Z"/></svg>
+              <span id="amountErrorText">Informe um valor válido.</span>
+            </p>
+          </div>
+
+          <!-- ------------------- BOTÃO INVERTER ------------------- -->
+          <div class="fx-swap">
+            <span class="fx-swap__line" aria-hidden="true"></span>
+            <button type="button" class="swap" id="swapBtn" title="Inverter moedas (S)" aria-label="Inverter moedas de origem e destino">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.4 4.2v15.6M7.4 19.8 3.8 16M7.4 19.8l3.6-3.8"/><path d="M16.6 19.8V4.2M16.6 4.2 13 8M16.6 4.2l3.6 3.8"/></svg>
+            </button>
+            <span class="fx-swap__line" aria-hidden="true"></span>
+          </div>
+
+          <!-- ------------------- MOEDA DE DESTINO ------------------- -->
+          <div class="fx-field fx-field--out">
+            <div class="fx-field__top">
+              <span class="label" id="resultLabel">Você recebe</span>
+              <button type="button" class="ghost-btn" id="copyBtn" title="Copiar resultado (C)">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9.2" y="9.2" width="11" height="11" rx="2.6"/><path d="M15.4 6.2V5.4a2.2 2.2 0 0 0-2.2-2.2H5.6a2.2 2.2 0 0 0-2.2 2.2v7.6a2.2 2.2 0 0 0 2.2 2.2h.8"/></svg>
+                <span id="copyBtnText">Copiar</span>
+              </button>
+            </div>
+
+            <div class="fx-field__body">
+              <div class="amount amount--out" id="resultShell">
+                <span class="amount__symbol" id="toSymbol" aria-hidden="true">US$</span>
+                <output class="amount__value" id="resultValue" for="amountInput">0,00</output>
+              </div>
+
+              <div class="picker" id="pickerTo" data-open="false">
+                <label class="sr-only" for="toSearch">Moeda de destino</label>
+                <div class="picker__control">
+                  <img class="picker__flag" id="toFlag" src="assets/flags/us.svg" alt="" width="30" height="21">
+                  <input
+                    class="picker__input"
+                    id="toSearch"
+                    type="text"
+                    role="combobox"
+                    aria-expanded="false"
+                    aria-controls="toList"
+                    aria-autocomplete="list"
+                    aria-haspopup="listbox"
+                    aria-label="Moeda de destino"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="Buscar moeda">
+                  <svg class="picker__chevron icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.8 9.6 12 14.8l5.2-5.2"/></svg>
+                </div>
+                <ul class="picker__list" id="toList" role="listbox" aria-label="Moedas de destino" tabindex="-1" hidden></ul>
+              </div>
+            </div>
+
+            <!-- Faixa de cotação -->
+            <div class="rate">
+              <p class="rate__main" id="rateLine">1 BRL = US$ 0,0000</p>
+              <p class="rate__alt" id="rateAlt"></p>
+              <p class="rate__meta">
+                <span class="rate__updated" id="rateUpdated">Aguardando cotações…</span>
+              </p>
+            </div>
+          </div>
+
+          <!-- ------------------- AÇÕES ------------------- -->
+          <div class="fx-actions">
+            <div class="chips" role="group" aria-label="Valores rápidos">
+              <button type="button" class="chip" data-amount="100">100</button>
+              <button type="button" class="chip" data-amount="500">500</button>
+              <button type="button" class="chip" data-amount="1000">1.000</button>
+              <button type="button" class="chip" data-amount="5000">5.000</button>
+            </div>
+
+            <div class="actions">
+              <button type="button" class="btn btn--ghost" id="refreshBtn" title="Buscar cotações novamente">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 12a8.4 8.4 0 1 1-2.6-6.1"/><path d="M20.6 3.6v5.2h-5.2"/></svg>
+                <span>Atualizar</span>
+              </button>
+              <button type="submit" class="btn btn--primary" id="convertBtn">
+                <span class="btn__label">Converter</span>
+                <kbd class="kbd kbd--onPrimary">Enter</kbd>
+                <span class="btn__spinner" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <!-- ------------------- VARIAÇÃO 30 DIAS ------------------- -->
+        <section class="trend" id="trend" aria-labelledby="trendTitle" hidden>
+          <div class="trend__head">
+            <h2 class="trend__title" id="trendTitle">Variação nos últimos 30 dias</h2>
+            <p class="tag" id="trendTag">—</p>
+          </div>
+          <div class="trend__body">
+            <div class="spark" id="spark" aria-hidden="true"></div>
+            <dl class="trend__stats">
+              <div><dt>Mínimo</dt><dd id="trendMin">—</dd></div>
+              <div><dt>Máximo</dt><dd id="trendMax">—</dd></div>
+              <div><dt>Média</dt><dd id="trendAvg">—</dd></div>
+            </dl>
+          </div>
         </section>
-    </main>
-</body>
+      </section>
 
+      <!-- ---------------------------- LATERAL ---------------------------- -->
+      <aside class="side" aria-label="Painéis auxiliares">
+        <!-- Mercado agora -->
+        <section class="card" aria-labelledby="marketTitle">
+          <header class="card__head card__head--sm">
+            <div class="card__heading">
+              <h2 class="card__title card__title--sm" id="marketTitle">Mercado agora</h2>
+              <p class="card__sub card__sub--sm">Referência em real brasileiro</p>
+            </div>
+            <button type="button" class="icon-btn icon-btn--sm" id="marketRefresh" title="Atualizar painel de mercado">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 12a8.4 8.4 0 1 1-2.6-6.1"/><path d="M20.6 3.6v5.2h-5.2"/></svg>
+              <span class="sr-only">Atualizar painel de mercado</span>
+            </button>
+          </header>
+
+          <ul class="watch" id="watchList">
+            <li class="watch__skeleton"></li>
+            <li class="watch__skeleton"></li>
+            <li class="watch__skeleton"></li>
+            <li class="watch__skeleton"></li>
+          </ul>
+
+          <p class="card__foot">Selecione uma moeda para carregá-la no conversor.</p>
+        </section>
+
+        <!-- Histórico -->
+        <section class="card" aria-labelledby="historyTitle">
+          <header class="card__head card__head--sm">
+            <div class="card__heading">
+              <h2 class="card__title card__title--sm" id="historyTitle">Histórico</h2>
+              <p class="card__sub card__sub--sm" id="historyCount">Nenhuma conversão salva</p>
+            </div>
+            <button type="button" class="ghost-btn ghost-btn--sm" id="clearHistory" hidden>Limpar</button>
+          </header>
+
+          <ul class="hist" id="historyList"></ul>
+
+          <div class="empty" id="historyEmpty">
+            <svg class="empty__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7.6v4.9l3.2 1.9"/><circle cx="12" cy="12" r="9"/></svg>
+            <p class="empty__title">Nada por aqui ainda</p>
+            <p class="empty__text">Suas conversões ficam salvas neste navegador, prontas para reutilizar.</p>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <!-- ============================ RODAPÉ ============================ -->
+    <footer class="foot">
+      <div class="foot__shortcuts" aria-label="Atalhos de teclado">
+        <span class="foot__label">Atalhos:</span>
+        <span><kbd class="kbd">Enter</kbd> converter</span>
+        <span><kbd class="kbd">S</kbd> inverter</span>
+        <span><kbd class="kbd">C</kbd> copiar</span>
+        <span><kbd class="kbd">/</kbd> buscar moeda</span>
+        <span><kbd class="kbd">R</kbd> atualizar</span>
+        <span><kbd class="kbd">T</kbd> tema</span>
+        <button type="button" class="link-btn" id="shortcutsBtnFoot">ver todos</button>
+      </div>
+
+      <p class="foot__note">
+        Cotações via <a href="https://economia.awesomeapi.com.br" target="_blank" rel="noopener noreferrer">AwesomeAPI</a>,
+        com <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">exchangerate-api</a> e valores locais como contingência.
+        Números apenas informativos — não constituem recomendação de investimento.
+      </p>
+
+      <p class="foot__credits">
+        Projeto <strong>DevClub</strong> · Convert Money <span id="appVersion">v2.0</span>
+        <span class="foot__sep" aria-hidden="true">·</span>
+        <span id="lastSync">sem sincronizar</span>
+      </p>
+    </footer>
+  </div>
+
+  <!-- ============================ OVERLAYS ============================ -->
+  <div class="toasts" id="toasts" role="region" aria-label="Notificações" aria-live="polite" aria-relevant="additions"></div>
+  <p class="sr-only" id="announcer" aria-live="polite" aria-atomic="true"></p>
+
+  <dialog class="modal" id="shortcutsDialog" aria-labelledby="shortcutsTitle">
+    <header class="modal__head">
+      <h2 class="modal__title" id="shortcutsTitle">Atalhos de teclado</h2>
+      <button type="button" class="icon-btn icon-btn--sm" id="shortcutsClose" aria-label="Fechar atalhos">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
+      </button>
+    </header>
+    <dl class="keys" id="shortcutsList"></dl>
+    <p class="modal__foot">Dica: use <kbd class="kbd">/</kbd> para pular direto para a busca de moedas.</p>
+  </dialog>
+
+  <script src="scripts.js" defer></script>
+</body>
 </html>

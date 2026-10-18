@@ -1,0 +1,28 @@
+{
+  "name": "Convert Money · Conversor de Moedas — DevClub",
+  "short_name": "Convert Money",
+  "description": "Conversor de moedas com cotações em tempo real, variação de 30 dias, histórico e tema claro/escuro.",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#07070f",
+  "theme_color": "#0a0a14",
+  "categories": ["finance", "utilities", "productivity"],
+  "icons": [
+    {
+      "src": "assets/logo-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "logo%201.png",
+      "sizes": "300x300",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
