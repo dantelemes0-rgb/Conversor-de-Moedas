@@ -184,9 +184,9 @@
             </div>
 
             <div class="fx-field__body">
-              <div class="amount amount--out" id="resultShell">
+              <div class="amount" id="resultShell">
                 <span class="amount__symbol" id="toSymbol" aria-hidden="true">US$</span>
-                <output class="amount__value" id="resultValue" for="amountInput">0,00</output>
+                <output class="amount__value" id="resultValue" for="amountInput" aria-live="off">0,00</output>
               </div>
 
               <div class="picker" id="pickerTo" data-open="false">
@@ -238,7 +238,7 @@
               </button>
               <button type="submit" class="btn btn--primary" id="convertBtn">
                 <span class="btn__label">Converter</span>
-                <kbd class="kbd kbd--onPrimary">Enter</kbd>
+                <kbd class="kbd kbd--onPrimary" aria-hidden="true">Enter</kbd>
                 <span class="btn__spinner" aria-hidden="true"></span>
               </button>
             </div>
@@ -252,7 +252,7 @@
             <p class="tag" id="trendTag">—</p>
           </div>
           <div class="trend__body">
-            <div class="spark" id="spark" aria-hidden="true"></div>
+            <div class="spark" id="spark"></div>
             <dl class="trend__stats">
               <div><dt>Mínimo</dt><dd id="trendMin">—</dd></div>
               <div><dt>Máximo</dt><dd id="trendMax">—</dd></div>

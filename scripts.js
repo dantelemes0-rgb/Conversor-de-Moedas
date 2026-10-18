@@ -46,6 +46,22 @@
   const FALLBACK_BRL_PER = { BRL: 1, USD: 5.0627, EUR: 5.6812, GBP: 6.7215, BTC: 412856 };
   const FALLBACK_DATE = Date.parse('2026-10-16T18:01:00-03:00');
 
+  /* A AwesomeAPI publica Bitcoin apenas como moeda de origem e só contra estas moedas. */
+  const BTC_QUOTES = { BRL: true, USD: true, EUR: true };
+
+  /* A AwesomeAPI publica Bitcoin apenas como moeda de origem (BTC-BRL, BTC-USD…).
+     Para pares do tipo "algo-BTC" buscamos o par invertido e invertemos a cotação;
+     combinações sem par publicado caem no cruzamento via real. */
+  function apiPair(from, to) {
+    if (from === 'BTC') {
+      return BTC_QUOTES[to] ? { pair: 'BTC-' + to, invert: false } : { pair: null, invert: false };
+    }
+    if (to === 'BTC') {
+      return BTC_QUOTES[from] ? { pair: 'BTC-' + from, invert: true } : { pair: null, invert: true };
+    }
+    return { pair: from + '-' + to, invert: false };
+  }
+
   const APIS = {
     pair: (pair) => 'https://economia.awesomeapi.com.br/json/last/' + pair,
     daily: (pair, days) => 'https://economia.awesomeapi.com.br/json/daily/' + pair + '/' + days,
@@ -55,6 +71,7 @@
 
   const SOURCE_LABEL = {
     awesomeapi: 'AwesomeAPI',
+    'awesomeapi-cross': 'AwesomeAPI · cruzado',
     'exchangerate-api': 'exchangerate-api',
     local: 'valores locais',
     identity: 'mesma moeda'
@@ -126,23 +143,28 @@
     return numberCache.get(key);
   }
 
-  /** Número puro, sem símbolo (campos e animações). */
-  function formatNumber(value, code) {
+  /** Casas decimais adequadas ao valor: cripto pode precisar de 8, moeda fiduciária usa 2. */
+  function decimalsFor(value, code) {
     const currency = CURRENCIES[code];
-    const decimals = currency && currency.kind === 'crypto' ? 8 : 2;
-    return numberFormatter(decimals, decimals).format(value);
+    if (!currency || currency.kind !== 'crypto') return 2;
+    const absolute = Math.abs(value);
+    if (absolute >= 1) return 2;
+    if (absolute >= 0.01) return 4;
+    if (absolute >= 0.0001) return 6;
+    return 8;
+  }
+
+  /** Número puro, sem símbolo (campos e animações). */
+  function formatNumber(value, code, forcedDecimals) {
+    const digits = typeof forcedDecimals === 'number' ? forcedDecimals : decimalsFor(value, code);
+    return numberFormatter(Math.min(2, digits), digits).format(value);
   }
 
   /** Valor monetário com símbolo previsível (R$, US$, €, £, ₿). */
   function formatMoney(value, code) {
     if (!Number.isFinite(value)) return '—';
     const currency = CURRENCIES[code];
-    const prefix = currency ? currency.symbol : '';
-    const decimals = currency && currency.kind === 'crypto' ? 8 : 2;
-    const formatted = currency && currency.kind === 'crypto' && Math.abs(value) >= 1
-      ? numberFormatter(2, 8).format(value)
-      : numberFormatter(decimals, decimals).format(value);
-    return prefix + '\u00a0' + formatted;
+    return (currency ? currency.symbol : '') + '\u00a0' + formatNumber(value, code);
   }
 
   /** Cotação com precisão adaptativa: 4.612,35 · 5,0627 · 0,000024. */
@@ -188,8 +210,10 @@
     } else if (hasDot) {
       const parts = text.split('.');
       const last = parts[parts.length - 1];
-      // "1.234" ou "1.234.567" => separador de milhar.
-      if (parts.length > 2 || last.length === 3) text = parts.join('');
+      const integer = parts[0];
+      // "1.234" e "1.234.567" são milhares; "0.045", ".5" e "1.2345" são decimais.
+      const isGrouping = parts.length > 2 || (last.length === 3 && integer !== '' && integer !== '0');
+      if (isGrouping) text = parts.join('');
     }
 
     const value = Number(text);
@@ -201,7 +225,7 @@
     return Number.isFinite(value) ? formatNumber(value, code) : '';
   }
 
-  const relativeFormatter = new Intl.RelativeTimeFormat(LOCALE, { numeric: 'auto', style: 'short' });
+  let relativeFormatter = null;
 
   function relativeTime(timestamp) {
     if (!timestamp) return '—';
@@ -215,7 +239,16 @@
       const unit = table[index][0];
       const size = table[index][1];
       if (absolute >= size || unit === 'second') {
-        return relativeFormatter.format(Math.round(diff / size), unit);
+        const amount = Math.round(diff / size);
+        try {
+          if (!relativeFormatter) {
+            relativeFormatter = new Intl.RelativeTimeFormat(LOCALE, { numeric: 'auto', style: 'short' });
+          }
+          return relativeFormatter.format(amount, unit);
+        } catch (error) {
+          /* Navegador sem Intl.RelativeTimeFormat: texto simples equivalente. */
+          return amount === 0 ? 'agora' : Math.abs(amount) + ' ' + unit;
+        }
       }
     }
     return 'agora';
@@ -282,6 +315,42 @@
      4. SERVIÇO DE COTAÇÕES
      ========================================================================== */
 
+  /** Normaliza a resposta da AwesomeAPI em um valor de cotação. */
+  function parseAwesomeEntry(entry, invert) {
+    if (!entry || !entry.bid) return null;
+
+    const raw = Number(entry.bid);
+    if (!Number.isFinite(raw) || raw <= 0) return null;
+
+    const pctRaw = Number(entry.pctChange);
+    /* A variação do par invertido não é o simples negativo: 1/(1+p) - 1. */
+    const pctChange = invert && Number.isFinite(pctRaw)
+      ? (1 / (1 + pctRaw / 100) - 1) * 100
+      : pctRaw;
+
+    return {
+      rate: invert ? 1 / raw : raw,
+      pctChange: pctChange,
+      updatedAt: Date.parse(String(entry.create_date).replace(' ', 'T') + '-03:00') || Date.now(),
+      source: 'awesomeapi'
+    };
+  }
+
+  /** Busca a cotação do par, invertendo quando a API só publica o par oposto. */
+  async function fetchPairRate(from, to) {
+    const target = apiPair(from, to);
+    if (!target.pair) throw new Error('Par sem cotação direta');
+    const payload = await fetchJSON(APIS.pair(target.pair));
+    const value = parseAwesomeEntry(payload[target.pair.replace('-', '')], target.invert);
+    if (!value) throw new Error('Cotação indisponível');
+    return value;
+  }
+
+  /** A resposta que chegou ainda pertence ao par que está na tela? */
+  function isCurrentPair(from, to) {
+    return state.from === from && state.to === to;
+  }
+
   /** Cotação de 1 unidade de `from` em `to`, com cache e contingência. */
   async function loadRate(options) {
     const force = !!(options && options.force);
@@ -303,21 +372,10 @@
     }
 
     setRateBusy(true);
+    renderRate(); /* mostra o estado "Atualizando…" enquanto a rede responde */
     try {
-      const payload = await fetchJSON(APIS.pair(from + '-' + to));
-      const entry = payload[from + to];
-      if (!entry || !entry.bid) throw new Error('Cotação indisponível');
-
-      const rate = Number(entry.bid);
-      if (!Number.isFinite(rate) || rate <= 0) throw new Error('Cotação inválida');
-
-      const value = {
-        rate: rate,
-        pctChange: Number(entry.pctChange),
-        updatedAt: Date.parse(String(entry.create_date).replace(' ', 'T') + '-03:00') || Date.now(),
-        source: 'awesomeapi'
-      };
-
+      const value = await fetchPairRate(from, to);
+      if (!isCurrentPair(from, to)) return;
       cacheWrite(cacheKey, value);
       state.rate = Object.assign({}, value, { cached: false, stale: false });
     } catch (error) {
@@ -334,19 +392,7 @@
     if (from === to) return;
 
     try {
-      const payload = await fetchJSON(APIS.pair(from + '-' + to));
-      const entry = payload[from + to];
-      if (!entry || !entry.bid) return;
-
-      const rate = Number(entry.bid);
-      if (!Number.isFinite(rate) || rate <= 0) return;
-
-      const value = {
-        rate: rate,
-        pctChange: Number(entry.pctChange),
-        updatedAt: Date.parse(String(entry.create_date).replace(' ', 'T') + '-03:00') || Date.now(),
-        source: 'awesomeapi'
-      };
+      const value = await fetchPairRate(from, to);
       cacheWrite('rate:' + from + '-' + to, value);
 
       /* O par mudou enquanto a requisição estava em curso: descarta o resultado. */
@@ -360,8 +406,58 @@
     } catch (error) { /* silencioso por definição */ }
   }
 
+  /** Preço de 1 unidade da moeda em reais (painel de mercado ou requisição direta). */
+  async function brlPrice(code) {
+    if (code === 'BRL') return { value: 1, at: Date.now() };
+
+    const known = state.market && state.market[code];
+    if (known && Number.isFinite(known.brl) && known.brl > 0) {
+      return { value: known.brl, at: known.updatedAt || Date.now() };
+    }
+
+    try {
+      const payload = await fetchJSON(APIS.pair(code + '-BRL'));
+      const entry = payload[code + 'BRL'];
+      const value = Number(entry && entry.bid);
+      if (!Number.isFinite(value) || value <= 0) return null;
+      return {
+        value: value,
+        at: Date.parse(String(entry.create_date).replace(' ', 'T') + '-03:00') || Date.now()
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /** Cruzamento via real: cobre pares que a AwesomeAPI não publica (ex.: BTC-GBP). */
+  async function awesomeCrossRate(from, to) {
+    const prices = await Promise.all([brlPrice(from), brlPrice(to)]);
+    if (!prices[0] || !prices[1] || !prices[0].value || !prices[1].value) return null;
+    return {
+      rate: prices[0].value / prices[1].value,
+      updatedAt: Math.min(prices[0].at, prices[1].at)
+    };
+  }
+
   /** Caminhos alternativos quando a AwesomeAPI não responde. */
   async function fallbackRate(from, to, cached, cacheKey) {
+    /* 1) Cruzamento com o real: só usa pares que a API sempre publica. */
+    const cross = await awesomeCrossRate(from, to);
+    if (cross && Number.isFinite(cross.rate) && cross.rate > 0) {
+      if (!isCurrentPair(from, to)) return;
+      state.rate = {
+        rate: cross.rate,
+        pctChange: null,
+        updatedAt: cross.updatedAt || Date.now(),
+        source: 'awesomeapi-cross',
+        cached: false,
+        stale: false
+      };
+      cacheWrite(cacheKey, Object.assign({}, state.rate));
+      return;
+    }
+
+    /* 2) Tabela do exchangerate-api. */
     const crossCached = cacheRead('cross', MARKET_TTL);
     let table = null;
     let tableAt = null;
@@ -387,6 +483,9 @@
         table = null;
       }
     }
+
+    /* O par pode ter mudado durante a requisição da tabela: descarta o que chegou. */
+    if (!isCurrentPair(from, to)) return;
 
     if (table && table[from] && table[to]) {
       state.rate = {
@@ -435,14 +534,18 @@
     }
 
     try {
-      const payload = await fetchJSON(APIS.daily(from + '-' + to, SERIES_DAYS));
+      const target = apiPair(from, to);
+      if (!target.pair) throw new Error('Série indisponível para este par');
+      const payload = await fetchJSON(APIS.daily(target.pair, SERIES_DAYS));
       if (!Array.isArray(payload)) throw new Error('Série indisponível');
 
       const points = payload.slice().reverse()
         .map((item) => Number(item.bid))
-        .filter((value) => Number.isFinite(value) && value > 0);
+        .filter((value) => Number.isFinite(value) && value > 0)
+        .map((value) => (target.invert ? 1 / value : value));
 
       if (points.length < 3) throw new Error('Série insuficiente');
+      if (!isCurrentPair(from, to)) return;
 
       const value = {
         points: points,
@@ -459,6 +562,7 @@
       cacheWrite(cacheKey, value);
       state.series = Object.assign({}, value, { cached: false });
     } catch (error) {
+      if (!isCurrentPair(from, to)) return;
       state.series = cached ? Object.assign({}, cached.value, { cached: true }) : null;
     }
   }
@@ -489,7 +593,8 @@
       cacheWrite('market', market);
       state.market = market;
     } catch (error) {
-      state.market = cached ? cached.value : (state.market || null);
+      /* O painel em memória é mais recente que o cache antigo. */
+      state.market = state.market || (cached ? cached.value : null);
     }
   }
 
@@ -506,6 +611,7 @@
     market: null,
     history: [],
     rateBusy: false,
+    ratePending: false,
     lastSync: null
   };
 
@@ -614,12 +720,13 @@
     return currency.short + ' (' + currency.code + ')';
   }
 
-  function applyPickerVisual(side) {
+  function applyPickerVisual(side, force) {
     const code = side === 'from' ? state.from : state.to;
     const currency = CURRENCIES[code];
     const pick = dom.picks[side];
 
-    if (document.activeElement !== pick.input) pick.input.value = currencyLabel(code);
+    /* Ao confirmar uma escolha o rótulo é reescrito mesmo com o campo em foco. */
+    if (force || document.activeElement !== pick.input) pick.input.value = currencyLabel(code);
     pick.flag.src = currency.flag;
     pick.flag.alt = 'Bandeira de ' + currency.name;
     pick.flag.dataset.crypto = String(currency.kind === 'crypto');
@@ -631,7 +738,7 @@
 
     setText(dom.fromSymbol, from.symbol);
     setText(dom.toSymbol, to.symbol);
-    dom.amountInput.setAttribute('aria-label', 'Valor em ' + from.name);
+    dom.amountInput.setAttribute('aria-label', 'Você envia: valor em ' + from.name);
     setText(dom.resultLabel, 'Você recebe em ' + to.short);
 
     applyPickerVisual('from');
@@ -646,6 +753,17 @@
       setText(dom.rateAlt, '');
       setText(dom.rateUpdated, 'Buscando cotações…');
       dom.rateMeta.dataset.stale = 'false';
+      return;
+    }
+
+    /* Troca de par em curso: não mostrar a cotação antiga com a moeda nova. */
+    if (state.ratePending) {
+      setText(dom.rateLine, '1 ' + state.from + ' = —');
+      setText(dom.rateAlt, 'Buscando a cotação de ' + state.from + '/' + state.to + '…');
+      setText(dom.rateUpdated, 'Atualizando cotações…');
+      dom.rateMeta.dataset.stale = 'true';
+      dom.sourcePill.dataset.state = 'loading';
+      setText(dom.sourcePillText, 'Atualizando…');
       return;
     }
 
@@ -686,22 +804,29 @@
 
   /* ---------- 6.3 Valor convertido ---------- */
   let tweenFrame = null;
+  let tweenTimer = null;
 
   function paintResult(value, code, animate) {
     const node = dom.resultValue;
     const from = Number(node.dataset.value || 0);
     const target = Number.isFinite(value) ? value : 0;
-
-    if (!animate || REDUCED_MOTION.matches || !Number.isFinite(from)) {
-      if (tweenFrame) window.cancelAnimationFrame(tweenFrame);
-      tweenFrame = null;
-      node.textContent = formatNumber(target, code);
-      node.dataset.value = String(target);
-      return;
-    }
+    /* Fixa a precisão do alvo para o número não "tremer" durante a animação. */
+    const digits = decimalsFor(target, code);
 
     if (tweenFrame) window.cancelAnimationFrame(tweenFrame);
-    node.dataset.value = String(target);
+    if (tweenTimer) window.clearTimeout(tweenTimer);
+    tweenFrame = null;
+    tweenTimer = null;
+
+    const settle = () => {
+      node.textContent = formatNumber(target, code, digits);
+      node.dataset.value = String(target);
+    };
+
+    if (!animate || REDUCED_MOTION.matches || !Number.isFinite(from)) {
+      settle();
+      return;
+    }
 
     const start = window.performance.now();
     const duration = 420;
@@ -709,17 +834,29 @@
     const step = (now) => {
       const progress = clamp((now - start) / duration, 0, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
-      node.textContent = formatNumber(from + (target - from) * eased, code);
+      node.textContent = formatNumber(from + (target - from) * eased, code, digits);
       if (progress < 1) {
         tweenFrame = window.requestAnimationFrame(step);
       } else {
-        node.textContent = formatNumber(target, code);
         tweenFrame = null;
+        settle();
       }
     };
 
-    node.textContent = formatNumber(from, code);
+    node.dataset.value = String(target);
+    node.textContent = formatNumber(from, code, digits);
     tweenFrame = window.requestAnimationFrame(step);
+
+    /* Garantia: com a aba em segundo plano o rAF fica suspenso; o valor final
+       precisa aparecer de qualquer forma. */
+    tweenTimer = window.setTimeout(() => {
+      tweenTimer = null;
+      if (tweenFrame) {
+        window.cancelAnimationFrame(tweenFrame);
+        tweenFrame = null;
+      }
+      settle();
+    }, duration + 160);
   }
 
   function renderResult(options) {
@@ -731,6 +868,17 @@
     paintResult(valid ? result : 0, state.to, !!settings.animate && valid);
     dom.resultShell.dataset.value = String(valid ? result : 0);
     return valid ? result : null;
+  }
+
+  /** Enquanto a cotação do par novo não chega, o bloco fica marcado e copiar/compartilhar
+      desligados: nada de copiar o número do par anterior. */
+  function setResultPending(pending) {
+    state.ratePending = !!pending;
+    dom.resultShell.classList.toggle('is-updating', pending);
+    dom.resultShell.setAttribute('aria-busy', String(pending));
+    dom.copyBtn.disabled = pending;
+    dom.shareBtn.disabled = pending;
+    renderRate();
   }
 
   /* ---------- 6.4 Tendência (sparkline) ---------- */
@@ -801,7 +949,13 @@
   /* ---------- 6.5 Painel de mercado ---------- */
   function renderMarket() {
     const market = state.market;
-    if (!market) return;
+
+    if (!market) {
+      dom.watchList.innerHTML = '<li class="watch__error">' +
+        '<p class="watch__error-text">Não foi possível carregar o mercado agora.</p>' +
+        '<button type="button" class="ghost-btn" id="marketRetry">Tentar de novo</button></li>';
+      return;
+    }
 
     dom.watchList.innerHTML = ['USD', 'EUR', 'GBP', 'BTC'].filter((code) => market[code]).map((code) => {
       const currency = CURRENCIES[code];
@@ -840,7 +994,7 @@
       const from = CURRENCIES[item.from];
       const to = CURRENCIES[item.to];
       return '<li class="hist__item">' +
-        '<button type="button" class="hist__load" data-id="' + item.id + '" title="Reutilizar esta conversão">' +
+        '<button type="button" class="hist__load" data-id="' + esc(item.id) + '" title="Reutilizar esta conversão">' +
         '<span class="hist__line hist__line--in">' +
         '<img class="hist__flag" data-crypto="' + (from.kind === 'crypto') + '" src="' + from.flag + '" alt="">' +
         '<span class="hist__value">' + formatMoney(item.amount, item.from) + '</span>' +
@@ -851,7 +1005,7 @@
         '<span class="hist__value">' + formatMoney(item.result, item.to) + '</span>' +
         '</span>' +
         '</button>' +
-        '<button type="button" class="hist__del" data-delete="' + item.id + '" aria-label="Remover esta conversão">' +
+        '<button type="button" class="hist__del" data-delete="' + esc(item.id) + '" aria-label="Remover esta conversão">' +
         ICONS.trash + '</button>' +
         '</li>';
     }).join('');
@@ -897,11 +1051,10 @@
     dom.convertBtn.classList.toggle('is-busy', busy);
     dom.convertBtn.disabled = busy;
     dom.refreshBtn.disabled = busy;
-    dom.card.setAttribute('aria-busy', String(busy));
   }
 
   function markSynced() {
-    if (state.rate && state.rate.source === 'awesomeapi') {
+    if (state.rate && (state.rate.source === 'awesomeapi' || state.rate.source === 'awesomeapi-cross')) {
       state.lastSync = Date.now();
       renderSync();
     }
@@ -933,10 +1086,12 @@
       });
 
       if (!options.length) {
-        list.innerHTML = '<li class="picker__empty" role="presentation">Nenhuma moeda encontrada para <b>' +
+        /* Mensagem como opção desativada: o leitor de tela anuncia a busca vazia. */
+        list.innerHTML = '<li class="picker__empty" id="' + side + '-opt-empty" role="option" ' +
+          'aria-disabled="true" aria-selected="false">Nenhuma moeda encontrada para <b>' +
           esc(query) + '</b>.</li>';
         activeIndex = -1;
-        input.removeAttribute('aria-activedescendant');
+        input.setAttribute('aria-activedescendant', side + '-opt-empty');
         return;
       }
 
@@ -1013,12 +1168,26 @@
     function commit(code) {
       if (!CURRENCIES[code]) return;
       closeList(false);
-      applyPickerVisual(side);
+      /* Primeiro aplica a escolha; depois reescreve o rótulo com o estado novo,
+         mesmo que o campo continue em foco. */
       onCurrencySelected(side, code);
+      applyPickerVisual(side, true);
     }
 
-    input.addEventListener('focus', openList);
+    /* Foco por teclado: seleciona o rótulo para digitar por cima, sem abrir a
+       lista sozinho (padrão APG: abre com seta, clique ou digitação). */
+    input.addEventListener('focus', () => {
+      if (input.value === currencyLabel(selectedCode())) input.select();
+    });
     input.addEventListener('click', openList);
+    input.addEventListener('blur', () => applyPickerVisual(side));
+
+    /* Clicar na bandeira, no código ou na seta também abre a lista. */
+    refs.root.querySelector('.picker__control').addEventListener('click', (event) => {
+      if (event.target === input) return;
+      input.focus();
+      openList(); /* idempotente: ignora se a lista já estiver aberta */
+    });
 
     input.addEventListener('input', () => {
       query = normalize(input.value);
@@ -1101,8 +1270,7 @@
     return {
       refresh: () => { if (open) buildOptions(); },
       close: () => closeList(),
-      restore: () => applyPickerVisual(side),
-      isOpen: () => open
+      open: () => { input.focus(); openList(); }
     };
   }
 
@@ -1123,7 +1291,7 @@
     }
 
     renderMeta();
-    renderResult({ animate: true });
+    setResultPending(true); /* o resultado do par novo só aparece quando a cotação chega */
     updateChips();
     urlSync();
     savePreferences();
@@ -1166,9 +1334,11 @@
       return false;
     }
 
-    if (value < 0) {
+    if (value <= 0) {
       state.amountValid = false;
-      showAmountError('O valor não pode ser negativo.');
+      state.amount = value;
+      /* No envio é erro; durante a digitação "0" ainda pode virar "0,5". */
+      showAmountError(showEmptyError ? 'Informe um valor maior que zero.' : '');
       return false;
     }
 
@@ -1199,12 +1369,18 @@
     dom.clearAmount.hidden = !dom.amountInput.value;
   }
 
-  function commitConversion(options) {
-    const settings = options || {};
-
+  function commitConversion() {
     if (!validateAmount(true)) {
       dom.amountInput.focus();
       toast('Confira o valor informado para continuar.', 'warn', { title: 'Valor inválido' });
+      return;
+    }
+
+    /* Sem a cotação do par ainda: melhor avisar do que registrar um resultado falso. */
+    if (!state.rate) {
+      setResultPending(true);
+      toast('Buscando a cotação deste par…', 'warn', { title: 'Só um instante', duration: 2600 });
+      reloadPair();
       return;
     }
 
@@ -1212,14 +1388,11 @@
     updateChips();
     urlSync();
     savePreferences();
+    renderRate();
+    markSynced();
 
-    if (state.rate) {
-      renderRate();
-      markSynced();
-    }
-
-    const result = state.amount * (state.rate ? state.rate.rate : NaN);
-    if (Number.isFinite(result) && settings.save !== false) {
+    const result = state.amount * state.rate.rate;
+    if (Number.isFinite(result)) {
       addToHistory(state.amount, result);
       announce(formatMoney(state.amount, state.from) + ' equivalem a ' + formatMoney(result, state.to));
       toast(formatMoney(state.amount, state.from) + ' = ' + formatMoney(result, state.to), 'success', {
@@ -1239,7 +1412,9 @@
 
     dom.amountInput.value = state.amountValid ? maskAmount(state.amount, state.from) : '';
     renderMeta();
-    renderResult({ animate: true });
+    setResultPending(true);
+    updateChips();
+    urlSync();
     announce('Moedas invertidas: de ' + CURRENCIES[state.from].name + ' para ' + CURRENCIES[state.to].name);
     reloadPair();
   }
@@ -1314,7 +1489,20 @@
         await navigator.share({ title: 'Convert Money · DevClub', text: text, url: url });
         return;
       }
-      await navigator.clipboard.writeText(text + '\n' + url);
+
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text + '\n' + url);
+      } else {
+        const helper = document.createElement('textarea');
+        helper.value = text + '\n' + url;
+        helper.setAttribute('readonly', 'readonly');
+        helper.style.position = 'fixed';
+        helper.style.top = '-1000px';
+        document.body.appendChild(helper);
+        helper.select();
+        document.execCommand('copy');
+        helper.remove();
+      }
       toast('Resultado e link copiados para a área de transferência.', 'success', { title: 'Pronto para compartilhar' });
     } catch (error) {
       if (error && error.name === 'AbortError') return;
@@ -1328,13 +1516,14 @@
   function renderShortcuts() {
     dom.shortcutsList.innerHTML = SHORTCUTS.map((item) => (
       '<div class="keys__row">' +
-      '<span class="keys__keys">' + item.keys.map((key) => '<kbd class="kbd">' + esc(key) + '</kbd>').join('') + '</span>' +
-      '<span class="keys__desc">' + esc(item.desc) + '</span>' +
+      '<dt class="keys__keys">' + item.keys.map((key) => '<kbd class="kbd">' + esc(key) + '</kbd>').join('') + '</dt>' +
+      '<dd class="keys__desc">' + esc(item.desc) + '</dd>' +
       '</div>'
     )).join('');
   }
 
   function openShortcuts() {
+    if (dom.shortcutsDialog.open) return;
     if (typeof dom.shortcutsDialog.showModal === 'function') dom.shortcutsDialog.showModal();
     else dom.shortcutsDialog.setAttribute('open', '');
   }
@@ -1401,26 +1590,36 @@
         toggleTheme();
       } else if (key === '/') {
         event.preventDefault();
-        dom.picks.from.input.focus();
+        pickers.from.open();
       } else if (event.key === '?') {
         event.preventDefault();
         openShortcuts();
       } else if (event.key === 'Enter') {
+        /* Enter ativa o controle em foco (botão, link, resumo): não é atalho. */
+        const focused = event.target;
+        if (focused && focused.closest &&
+            focused.closest('button, a, summary, [role="button"], [role="menuitem"], [role="option"]')) {
+          return;
+        }
         event.preventDefault();
         commitConversion();
       }
     });
   }
 
+  let refreshing = false;
+
   function refreshRates(force) {
+    if (refreshing) return;
+    refreshing = true;
     dom.refreshBtn.classList.add('is-spinning');
     dom.marketRefresh.classList.add('is-spinning');
     state.lastSync = null;
     renderSync();
 
     Promise.all([
-      loadRate({ force: force !== false }),
-      loadMarket(force !== false)
+      loadRate({ force: true }),
+      loadMarket(true)
     ]).then(() => Promise.all([loadSeries(), Promise.resolve()]))
       .then(() => {
         renderRate();
@@ -1438,6 +1637,7 @@
       .then(() => {
         dom.refreshBtn.classList.remove('is-spinning');
         dom.marketRefresh.classList.remove('is-spinning');
+        refreshing = false;
       });
   }
 
@@ -1461,7 +1661,8 @@
 
     const history = store.get('history', []);
     state.history = Array.isArray(history)
-      ? history.filter((item) => item && CURRENCIES[item.from] && CURRENCIES[item.to] &&
+      ? history.filter((item) => item && typeof item.id === 'string' && /^[A-Za-z0-9_-]+$/.test(item.id) &&
+        CURRENCIES[item.from] && CURRENCIES[item.to] &&
         Number.isFinite(item.amount) && Number.isFinite(item.result))
       : [];
   }
@@ -1473,6 +1674,7 @@
   /** Recarrega cotação e série do par atual e mantém a tela coerente. */
   function reloadPair() {
     Promise.all([loadRate(), loadSeries()]).then(() => {
+      setResultPending(false);
       renderRate();
       renderResult({ animate: true });
       renderSeries();
@@ -1589,6 +1791,15 @@
 
     /* Painel de mercado: carrega o par no conversor */
     dom.watchList.addEventListener('click', (event) => {
+      if (event.target.closest('#marketRetry')) {
+        loadMarket(true).then(() => {
+          renderMarket();
+          pickers.from.refresh();
+          pickers.to.refresh();
+        });
+        return;
+      }
+
       const button = event.target.closest('[data-code]');
       if (!button) return;
 
@@ -1596,7 +1807,7 @@
       state.to = 'BRL';
       state.amountValid = state.amount > 0;
       renderMeta();
-      renderResult({ animate: true });
+      setResultPending(true);
       updateChips();
       urlSync();
       savePreferences();
@@ -1666,12 +1877,14 @@
     applyTheme(document.documentElement.dataset.theme || 'dark', false);
     updateChips();
     renderRate();
+    setResultPending(true);
 
     bindEvents();
     bindShortcuts();
 
     await Promise.all([loadRate(), loadMarket(false)]);
 
+    setResultPending(false);
     renderRate();
     renderResult({ animate: true });
     renderMarket();

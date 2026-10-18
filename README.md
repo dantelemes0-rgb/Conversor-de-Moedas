@@ -101,7 +101,7 @@ Exemplo completo: `index.html?de=EUR&para=BRL&valor=250`
 
 ## 📊 Fonte dos dados
 
-1. **[AwesomeAPI](https://economia.awesomeapi.com.br)** — cotações do par selecionado, painel de mercado e série diária (contingência do dia).
+1. **[AwesomeAPI](https://economia.awesomeapi.com.br)** — cotações do par selecionado, painel de mercado e série diária (contingência do dia). Pares que a API não publica (ex.: `BRL-BTC`, `BTC-GBP`) são resolvidos invertendo o par ou calculando o cruzamento via real e aparecem como `AwesomeAPI · cruzado`.
 2. **[exchangerate-api](https://www.exchangerate-api.com)** — usada quando a AwesomeAPI não responde; as taxas cruzadas são calculadas com base no real.
 3. **Tabela local** — último recurso embutido no código, sinalizado na interface como `valores locais`.
 
