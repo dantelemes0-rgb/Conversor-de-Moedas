@@ -64,8 +64,10 @@ Depois acesse `http://127.0.0.1:5173`.
 ├── style.css                  Sistema de design (tokens, temas, componentes, responsivo)
 ├── scripts.js                 Estado, cotações, combobox, histórico e atalhos
 ├── manifest.webmanifest       Metadados para instalação como app
+├── conversor-moedas-linkedin.png  Imagem de apresentação (Open Graph/Twitter)
 ├── assets/
-│   ├── logo-mark.svg          Marca do app (usada também como favicon)
+│   ├── logo-mark.svg          Marca do app (favicon)
+│   ├── icon-300.png           Ícone de instalação (PWA e Apple touch icon)
 │   └── flags/                 Bandeiras e moeda em SVG: br, us, eu, gb, btc
 └── README.md
 ```
