@@ -2,6 +2,8 @@
 
 Conversor de moedas **profissional** feito com HTML, CSS e JavaScript puro — sem frameworks, sem dependências e sem etapa de build. Cotações em tempo real, série histórica, histórico local e uma interface que funciona do celular ao desktop.
 
+**[🌐 Demo ao vivo](https://dantelemes0-rgb.github.io/Conversor-de-Moedas/)** · **[📦 Código no GitHub](https://github.com/dantelemes0-rgb/Conversor-de-Moedas)**
+
 <p align="center">
   <img src="conversor-moedas-linkedin.png" alt="Convert Money — conversor de moedas do DevClub" width="520">
 </p>
@@ -40,9 +42,11 @@ Conversor de moedas **profissional** feito com HTML, CSS e JavaScript puro — s
 
 ## ▶️ Como executar
 
-**Opção 1 — direto no navegador:** abra o arquivo `index.html`.
+**Opção 1 — online:** acesse a [demo no GitHub Pages](https://dantelemes0-rgb.github.io/Conversor-de-Moedas/).
 
-**Opção 2 — servidor local (recomendado para testar cache e PWA):**
+**Opção 2 — direto no navegador:** abra o arquivo `index.html`.
+
+**Opção 3 — servidor local (recomendado para testar cache e PWA):**
 
 ```bash
 # Python
